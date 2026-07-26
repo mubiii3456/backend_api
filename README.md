@@ -1,28 +1,25 @@
-first-api
+# FastAPI SQLite CRUD API
 
-The smallest possible backend: a Flask server with two JSON endpoints.
+A lightweight, clean FastAPI REST API performing complete CRUD operations on a local SQLite database for task management. Built as part of the Backend Assignment.
 
+## Features
 
-GET /api/health → {"status": "ok", "time": "<UTC timestamp>"}
-GET /api/hello?name=Ada → {"message": "Hello, Ada!"} (name is optional, defaults to "world")
+- **FastAPI Framework**: High performance, easy to learn, fast to code.
+- **SQLite Database**: Persistence using Python's built-in `sqlite3` module.
+- **Automatic Documentation**: Interactive Swagger UI provided by FastAPI out of the box.
+- **Auto-Initialization**: Automatically creates the database table and seeds initial default tasks on startup.
 
+## Requirements
 
-1. Run it locally
+- Python 3.10+
+- `fastapi`
+- `uvicorn`
+- `pydantic`
 
-bashpython3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-python3 app.py
+## Setup & Installation
 
-The server starts on http://127.0.0.1:5000.
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/mubiii3456/backend_api.git](https://github.com/mubiii3456/backend_api.git)
+   cd backend_api
 
-2. Call it
-
-From curl:
-
-bashcurl http://127.0.0.1:5000/api/health
-curl "http://127.0.0.1:5000/api/hello?name=Ada"
-
-From your browser: just open
-http://127.0.0.1:5000/api/health and
-http://127.0.0.1:5000/api/hello?name=Ada
