@@ -170,4 +170,5 @@ def delete_task(task_id: int):
             if deleted_row is None:
                 raise HTTPException(status_code=404, detail="Task not found")
 
+
             return None
