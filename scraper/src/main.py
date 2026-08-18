@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import json
 import requests
@@ -6,13 +7,32 @@ from datetime import datetime, timezone
 from urllib.parse import urljoin
 from pathlib import Path
 from bs4 import BeautifulSoup
+from pydantic import BaseModel, HttpUrl, Field
+from typing import Optional
 
-CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
+# Base Directories
+BASE_DIR = Path(__file__).resolve().parent.parent
+CACHE_DIR = BASE_DIR / "cache"
+OUTPUT_DIR = BASE_DIR / "output"
+
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 HEADERS = {
     "User-Agent": "FlyRankInternship-A9/1.0 (+https://github.com/mubiii3456/backend_api)"
 }
+
+# --- STAGE 4: PYDANTIC SCHEMA DEFINITION ---
+class BookRecord(BaseModel):
+    title: str
+    product_url: HttpUrl
+    price_text: str
+    price_gbp: float = Field(..., ge=0)
+    availability_text: str
+    rating_text: str
+    description: Optional[str] = None
+    source_page: HttpUrl
+    fetched_at: str
 
 def fetch_page(url: str, cache_filename: str) -> str:
     cache_path = CACHE_DIR / cache_filename
@@ -23,7 +43,6 @@ def fetch_page(url: str, cache_filename: str) -> str:
     time.sleep(0.5)
     print(f"FETCH: Requesting {url}")
     
-    # Timeout increased to 10s for slow connections
     for attempt in range(2):
         try:
             response = requests.get(url, headers=HEADERS, timeout=10)
@@ -108,10 +127,15 @@ def extract_book_detail(book_entry: dict, index: int) -> dict:
 
     fetched_at = datetime.now(timezone.utc).isoformat()
 
+    # Normalize Price Text to Float Number (£51.77 -> 51.77)
+    price_match = re.search(r"[\d\.]+", price_text)
+    price_gbp = float(price_match.group()) if price_match else 0.0
+
     return {
         "title": title,
         "product_url": product_url,
         "price_text": price_text,
+        "price_gbp": price_gbp,
         "availability_text": availability_text,
         "rating_text": rating_text,
         "description": description,
@@ -123,12 +147,26 @@ if __name__ == "__main__":
     start_catalogue_url = "https://books.toscrape.com/catalogue/page-1.html"
     book_entries = discover_book_urls(start_catalogue_url, max_pages=3)
     
-    raw_records = []
-    print("\nFetching & extracting book details...")
-    for idx, entry in enumerate(book_entries, start=1):
-        record = extract_book_detail(entry, idx)
-        raw_records.append(record)
+    valid_records = []
+    errors = []
 
-    print(f"\ndetail_pages={len(raw_records)}")
-    print("\nSample Raw Record:")
-    print(json.dumps(raw_records[0], indent=2))
+    print("\nFetching, extracting & validating book details...")
+    for idx, entry in enumerate(book_entries, start=1):
+        raw_data = extract_book_detail(entry, idx)
+        try:
+            # Validate against Pydantic Schema
+            validated_record = BookRecord(**raw_data)
+            valid_records.append(validated_record.model_dump(mode="json"))
+        except Exception as err:
+            errors.append({"raw_data": raw_data, "error": str(err)})
+
+    # Store Valid Records to output/books.json
+    books_file = OUTPUT_DIR / "books.json"
+    books_file.write_text(json.dumps(valid_records, indent=2), encoding="utf-8")
+
+    # Store Errors to output/errors.json
+    errors_file = OUTPUT_DIR / "errors.json"
+    errors_file.write_text(json.dumps(errors, indent=2), encoding="utf-8")
+
+    print(f"\nSaved {len(valid_records)} valid records to output/books.json")
+    print(f"Saved {len(errors)} error records to output/errors.json")
