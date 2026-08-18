@@ -207,7 +207,6 @@ def update_task(task_id: int, task: TaskUpdate):
             if updated_task is None:
                 raise HTTPException(status_code=404, detail="Task not found")
             return updated_task
-
 @app.delete("/tasks/{task_id}", status_code=204)
 def delete_task(task_id: int):
     with get_db() as conn:
