@@ -21,6 +21,7 @@ security = HTTPBearer()
 
 app = FastAPI(title="Auth & Tasks Practice API")
 
+# --- DATABASE SETUP ---
 def get_db():
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
@@ -52,6 +53,7 @@ def init_db():
 
 init_db()
 
+# --- PYDANTIC SCHEMAS ---
 class TaskCreate(BaseModel):
     title: str
 
@@ -63,11 +65,34 @@ class AuthCredentials(BaseModel):
     email: EmailStr
     password: str
 
+# --- STAGE 4: REUSABLE AUTH DEPENDENCY / GUARD ---
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token required"
+        )
+    try:
+        user_response = supabase.auth.get_user(token)
+        user = user_response.user
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+        return user
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+
+# --- AUTH ROUTES ---
 @app.post("/auth/signup", status_code=status.HTTP_201_CREATED)
 def signup(credentials: AuthCredentials):
     if not credentials.email or not credentials.password:
         raise HTTPException(status_code=400, detail="Email and password are required")
-    
     try:
         res = supabase.auth.sign_up({
             "email": credentials.email,
@@ -81,7 +106,6 @@ def signup(credentials: AuthCredentials):
 def login(credentials: AuthCredentials):
     if not credentials.email or not credentials.password:
         raise HTTPException(status_code=400, detail="Email and password are required")
-    
     try:
         res = supabase.auth.sign_in_with_password({
             "email": credentials.email,
@@ -98,41 +122,41 @@ def login(credentials: AuthCredentials):
             detail="Invalid login credentials"
         )
 
+# STAGE 4: LOGOUT ENDPOINT (PROTECTED)
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(current_user=Depends(get_current_user)):
+    try:
+        supabase.auth.sign_out()
+        return None
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Logout failed"
+        )
+
+# --- PUBLIC ROUTE ---
 @app.get("/public/info")
 def public_info():
     return {"message": "Welcome stranger! This info is public."}
 
+# --- PROTECTED ROUTES ---
 @app.get("/protected/profile")
-def get_profile(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    token = credentials.credentials
-    
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Access token required"
-        )
-        
-    try:
-        user_response = supabase.auth.get_user(token)
-        user = user_response.user
-        
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
-            )
-            
-        return {
-            "id": user.id,
-            "email": user.email,
-            "created_at": user.created_at
-        }
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        )
+def get_profile(current_user=Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "created_at": current_user.created_at
+    }
 
+# Extra protected route to verify middleware reuse
+@app.get("/protected/dashboard")
+def get_dashboard(current_user=Depends(get_current_user)):
+    return {
+        "message": f"Welcome to your private dashboard, {current_user.email}!",
+        "user_id": current_user.id
+    }
+
+# --- TASK CRUD ROUTES ---
 @app.get("/")
 def home():
     return {"message": "Database CRUD & Auth API is running!"}
@@ -158,7 +182,6 @@ def get_task(task_id: int):
 def create_task(task: TaskCreate):
     if not task.title.strip():
         raise HTTPException(status_code=400, detail="Title cannot be empty")
-
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -173,7 +196,6 @@ def create_task(task: TaskCreate):
 def update_task(task_id: int, task: TaskUpdate):
     if not task.title.strip():
         raise HTTPException(status_code=400, detail="Title cannot be empty")
-
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -182,10 +204,8 @@ def update_task(task_id: int, task: TaskUpdate):
             )
             updated_task = cursor.fetchone()
             conn.commit()
-
             if updated_task is None:
                 raise HTTPException(status_code=404, detail="Task not found")
-
             return updated_task
 
 @app.delete("/tasks/{task_id}", status_code=204)
@@ -195,8 +215,6 @@ def delete_task(task_id: int):
             cursor.execute("DELETE FROM tasks WHERE id = %s RETURNING id", (task_id,))
             deleted_row = cursor.fetchone()
             conn.commit()
-
             if deleted_row is None:
                 raise HTTPException(status_code=404, detail="Task not found")
-
             return None
