@@ -19,7 +19,7 @@ Follow these steps to run the complete stack on your local machine with a single
 
 ### 1. Clone the Repository
 ```bash
-git clone <YOUR_GITHUB_REPO_URL>
+git clone <https://github.com/mubiii3456/backend_api>
 cd backend_api
 2. Configure Environment VariablesCopy the template .env.example file to create your .env file:Bashcp .env.example .env
 3. Start the ApplicationRun the entire stack (FastAPI Backend + PostgreSQL Database) in detached mode:Bashdocker compose up -d
@@ -47,4 +47,5 @@ content-type: application/json
     "done": false
   }
 ]
-📸 Database Verification ScreenshotBelow is the screenshot confirming the database connection and the seeded tasks inside the Postgres Docker container:  
+📸 Database Verification ScreenshotBelow is the screenshot confirming the database connection and the seeded tasks inside the Postgres Docker container: <img width="1164" height="182" alt="Screenshot 2026-08-18 115929" src="https://github.com/user-attachments/assets/e5f88311-bb40-4778-8e7d-6067c3443853" />
+ 
