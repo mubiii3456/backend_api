@@ -1,25 +1,50 @@
-# FastAPI SQLite CRUD API
+# FastAPI + PostgreSQL Task API (Containerized)
 
-A lightweight, clean FastAPI REST API performing complete CRUD operations on a local SQLite database for task management. Built as part of the Backend Assignment.
+A RESTful Task Management CRUD API built with **FastAPI** and **PostgreSQL**, fully containerized using **Docker** and **Docker Compose**.
 
-## Features
+---
 
-- **FastAPI Framework**: High performance, easy to learn, fast to code.
-- **SQLite Database**: Persistence using Python's built-in `sqlite3` module.
-- **Automatic Documentation**: Interactive Swagger UI provided by FastAPI out of the box.
-- **Auto-Initialization**: Automatically creates the database table and seeds initial default tasks on startup.
+## 🛠️ Tech Stack
+* **Language:** Python 3.11
+* **Framework:** FastAPI
+* **Database:** PostgreSQL
+* **Driver:** `psycopg` (v3)
+* **Containerization:** Docker & Docker Compose
 
-## Requirements
+---
 
-- Python 3.10+
-- `fastapi`
-- `uvicorn`
-- `pydantic`
+## 🚀 Quick Start
 
-## Setup & Installation
+Follow these steps to run the complete stack on your local machine with a single command.
 
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/mubiii3456/backend_api.git](https://github.com/mubiii3456/backend_api.git)
-   cd backend_api
+### 1. Clone the Repository
+```bash
+git clone <YOUR_GITHUB_REPO_URL>
+cd backend_api
+2. Configure Environment VariablesCopy the template .env.example file to create your .env file:Bashcp .env.example .env
+3. Start the ApplicationRun the entire stack (FastAPI Backend + PostgreSQL Database) in detached mode:Bashdocker compose up -d
+The API will be available at: http://localhost:8000Interactive API Documentation (Swagger UI): http://localhost:8000/docs📌 API EndpointsMethodEndpointDescriptionStatus CodeGET/Health check / Welcome message200 OKGET/tasksFetch all tasks200 OKGET/tasks/{id}Fetch a single task by ID200 OK / 404 Not FoundPOST/tasksCreate a new task201 Created / 400 Bad RequestPUT/tasks/{id}Update task title and status200 OK / 400 / 404DELETE/tasks/{id}Delete a task204 No Content / 404🧪 Sample Output (curl)Bashcurl -i http://localhost:8000/tasks
+HTTPHTTP/1.1 200 OK
+date: Tue, 18 Aug 2026 12:00:00 GMT
+server: uvicorn
+content-length: 198
+content-type: application/json
 
+[
+  {
+    "id": 1,
+    "title": "Learn FastAPI",
+    "done": true
+  },
+  {
+    "id": 2,
+    "title": "Connect Postgres DB",
+    "done": false
+  },
+  {
+    "id": 3,
+    "title": "Submit Week 3 Assignment",
+    "done": false
+  }
+]
+📸 Database Verification ScreenshotBelow is the screenshot confirming the database connection and the seeded tasks inside the Postgres Docker container:  
