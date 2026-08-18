@@ -2,16 +2,26 @@ import os
 import psycopg
 from psycopg.rows import dict_row
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, status
+from pydantic import BaseModel, EmailStr
+from supabase import create_client, Client
 
 load_dotenv()
 
-# Agar .env load na ho paye toh default string use ho jaye
+# Database & Supabase Environment Variables
 DATABASE_URL = os.getenv("DATABASE_URL") or "postgresql://postgres:dev@localhost:5433/tasks"
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-app = FastAPI()
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in .env")
 
+# Supabase Client Initialization
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+app = FastAPI(title="Auth & Tasks Practice API")
+
+# --- DATABASE SETUP ---
 def get_db():
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
@@ -43,6 +53,7 @@ def init_db():
 
 init_db()
 
+# --- PYDANTIC SCHEMAS ---
 class TaskCreate(BaseModel):
     title: str
 
@@ -50,9 +61,52 @@ class TaskUpdate(BaseModel):
     title: str
     done: bool
 
+class AuthCredentials(BaseModel):
+    email: EmailStr
+    password: str
+
+# --- AUTH ROUTES (STAGE 1) ---
+
+@app.post("/auth/signup", status_code=status.HTTP_201_CREATED)
+def signup(credentials: AuthCredentials):
+    if not credentials.email or not credentials.password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+    
+    try:
+        res = supabase.auth.sign_up({
+            "email": credentials.email,
+            "password": credentials.password
+        })
+        return {"message": "User created successfully", "user": res.user}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/auth/login")
+def login(credentials: AuthCredentials):
+    if not credentials.email or not credentials.password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+    
+    try:
+        res = supabase.auth.sign_in_with_password({
+            "email": credentials.email,
+            "password": credentials.password
+        })
+        return {
+            "access_token": res.session.access_token,
+            "refresh_token": res.session.refresh_token,
+            "token_type": "bearer"
+        }
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid login credentials"
+        )
+
+# --- TASK CRUD ROUTES ---
+
 @app.get("/")
 def home():
-    return {"message": "Database CRUD API is running!"}
+    return {"message": "Database CRUD & Auth API is running!"}
 
 @app.get("/tasks")
 def get_all_tasks():
