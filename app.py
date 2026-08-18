@@ -1,40 +1,45 @@
-import sqlite3
+import os
+import psycopg
+from psycopg.rows import dict_row
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+load_dotenv()
+
+# Agar .env load na ho paye toh default string use ho jaye
+DATABASE_URL = os.getenv("DATABASE_URL") or "postgresql://postgres:dev@localhost:5433/tasks"
 
 app = FastAPI()
 
 def get_db():
-    conn = sqlite3.connect("tasks.db")
-    conn.row_factory = sqlite3.Row
-    return conn
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 def init_db():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            done BOOLEAN NOT NULL DEFAULT 0
-        )
-    """)
-    conn.commit()
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id SERIAL PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    done BOOLEAN NOT NULL DEFAULT FALSE
+                )
+            """)
+            conn.commit()
 
-    cursor.execute("SELECT COUNT(*) FROM tasks")
-    count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM tasks")
+            count = cursor.fetchone()["count"]
 
-    if count == 0:
-        cursor.executemany(
-            "INSERT INTO tasks (title, done) VALUES (?, ?)",
-            [
-                ("Learn FastAPI", 1),
-                ("Connect SQLite DB", 0),
-                ("Submit Week 3 Assignment", 0)
-            ]
-        )
-        conn.commit()
-    conn.close()
+            if count == 0:
+                cursor.executemany(
+                    "INSERT INTO tasks (title, done) VALUES (%s, %s)",
+                    [
+                        ("Learn FastAPI", True),
+                        ("Connect Postgres DB", False),
+                        ("Submit Week 3 Assignment", False)
+                    ]
+                )
+                conn.commit()
 
 init_db()
 
@@ -51,73 +56,64 @@ def home():
 
 @app.get("/tasks")
 def get_all_tasks():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tasks")
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM tasks ORDER BY id ASC")
+            return cursor.fetchall()
 
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return dict(row)
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM tasks WHERE id = %s", (task_id,))
+            row = cursor.fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Task not found")
+            return row
 
 @app.post("/tasks", status_code=201)
 def create_task(task: TaskCreate):
     if not task.title.strip():
         raise HTTPException(status_code=400, detail="Title cannot be empty")
 
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO tasks (title, done) VALUES (?, ?)", (task.title, 0))
-    conn.commit()
-    new_id = cursor.lastrowid
-    
-    cursor.execute("SELECT * FROM tasks WHERE id = ?", (new_id,))
-    new_task = dict(cursor.fetchone())
-    conn.close()
-    return new_task
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO tasks (title, done) VALUES (%s, %s) RETURNING *",
+                (task.title, False)
+            )
+            new_task = cursor.fetchone()
+            conn.commit()
+            return new_task
 
 @app.put("/tasks/{task_id}")
 def update_task(task_id: int, task: TaskUpdate):
     if not task.title.strip():
         raise HTTPException(status_code=400, detail="Title cannot be empty")
 
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
-    if cursor.fetchone() is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Task not found")
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE tasks SET title = %s, done = %s WHERE id = %s RETURNING *",
+                (task.title, task.done, task_id)
+            )
+            updated_task = cursor.fetchone()
+            conn.commit()
 
-    cursor.execute(
-        "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
-        (task.title, 1 if task.done else 0, task_id)
-    )
-    conn.commit()
+            if updated_task is None:
+                raise HTTPException(status_code=404, detail="Task not found")
 
-    cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
-    updated_task = dict(cursor.fetchone())
-    conn.close()
-    return updated_task
+            return updated_task
 
 @app.delete("/tasks/{task_id}", status_code=204)
 def delete_task(task_id: int):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
-    if cursor.fetchone() is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Task not found")
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM tasks WHERE id = %s RETURNING id", (task_id,))
+            deleted_row = cursor.fetchone()
+            conn.commit()
 
-    cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-    conn.commit()
-    conn.close()
-    return None
+            if deleted_row is None:
+                raise HTTPException(status_code=404, detail="Task not found")
+
+            return None

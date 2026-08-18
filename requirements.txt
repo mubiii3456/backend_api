@@ -1,4 +1,5 @@
-flask==3.0.3
 fastapi[standard]
 uvicorn
 pydantic
+psycopg[binary]
+python-dotenv
