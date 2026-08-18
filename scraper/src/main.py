@@ -22,7 +22,14 @@ HEADERS = {
     "User-Agent": "FlyRankInternship-A9/1.0 (+https://github.com/mubiii3456/backend_api)"
 }
 
-# --- STAGE 4: PYDANTIC SCHEMA DEFINITION ---
+# Run Metrics Tracker
+run_stats = {
+    "cache_hits": 0,
+    "network_fetches": 0,
+    "failures": 0
+}
+
+# Pydantic Schema
 class BookRecord(BaseModel):
     title: str
     product_url: HttpUrl
@@ -38,6 +45,7 @@ def fetch_page(url: str, cache_filename: str) -> str:
     cache_path = CACHE_DIR / cache_filename
     
     if cache_path.exists():
+        run_stats["cache_hits"] += 1
         return cache_path.read_text(encoding="utf-8")
 
     time.sleep(0.5)
@@ -51,9 +59,11 @@ def fetch_page(url: str, cache_filename: str) -> str:
 
             html_content = response.text
             cache_path.write_text(html_content, encoding="utf-8")
+            run_stats["network_fetches"] += 1
             return html_content
         except requests.RequestException as e:
             if attempt == 1:
+                run_stats["failures"] += 1
                 print(f"Error fetching URL {url}: {e}")
                 raise
             print(f"Retrying {url}...")
@@ -127,7 +137,6 @@ def extract_book_detail(book_entry: dict, index: int) -> dict:
 
     fetched_at = datetime.now(timezone.utc).isoformat()
 
-    # Normalize Price Text to Float Number (£51.77 -> 51.77)
     price_match = re.search(r"[\d\.]+", price_text)
     price_gbp = float(price_match.group()) if price_match else 0.0
 
@@ -144,29 +153,47 @@ def extract_book_detail(book_entry: dict, index: int) -> dict:
     }
 
 if __name__ == "__main__":
+    start_time = time.time()
+    
     start_catalogue_url = "https://books.toscrape.com/catalogue/page-1.html"
     book_entries = discover_book_urls(start_catalogue_url, max_pages=3)
     
     valid_records = []
     errors = []
 
-    print("\nFetching, extracting & validating book details...")
+    print("\nProcessing book details...")
     for idx, entry in enumerate(book_entries, start=1):
-        raw_data = extract_book_detail(entry, idx)
         try:
-            # Validate against Pydantic Schema
+            raw_data = extract_book_detail(entry, idx)
             validated_record = BookRecord(**raw_data)
             valid_records.append(validated_record.model_dump(mode="json"))
         except Exception as err:
-            errors.append({"raw_data": raw_data, "error": str(err)})
+            run_stats["failures"] += 1
+            errors.append({"url": entry["url"], "error": str(err)})
 
-    # Store Valid Records to output/books.json
+    end_time = time.time()
+    duration_seconds = round(end_time - start_time, 2)
+
+    # Output Files
     books_file = OUTPUT_DIR / "books.json"
     books_file.write_text(json.dumps(valid_records, indent=2), encoding="utf-8")
 
-    # Store Errors to output/errors.json
     errors_file = OUTPUT_DIR / "errors.json"
     errors_file.write_text(json.dumps(errors, indent=2), encoding="utf-8")
 
-    print(f"\nSaved {len(valid_records)} valid records to output/books.json")
-    print(f"Saved {len(errors)} error records to output/errors.json")
+    # STAGE 5: RUN REPORT
+    run_report = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "duration_seconds": duration_seconds,
+        "total_discovered": len(book_entries),
+        "valid_records": len(valid_records),
+        "failed_records": len(errors),
+        "cache_hits": run_stats["cache_hits"],
+        "network_fetches": run_stats["network_fetches"]
+    }
+
+    report_file = OUTPUT_DIR / "run-report.json"
+    report_file.write_text(json.dumps(run_report, indent=2), encoding="utf-8")
+
+    print(f"\nPipeline Run Completed in {duration_seconds}s!")
+    print(f"Report: {json.dumps(run_report, indent=2)}")
