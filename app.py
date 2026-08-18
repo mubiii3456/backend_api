@@ -2,13 +2,13 @@ import os
 import psycopg
 from psycopg.rows import dict_row
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from supabase import create_client, Client
 
 load_dotenv()
 
-# Database & Supabase Environment Variables
 DATABASE_URL = os.getenv("DATABASE_URL") or "postgresql://postgres:dev@localhost:5433/tasks"
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -16,12 +16,11 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in .env")
 
-# Supabase Client Initialization
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+security = HTTPBearer()
 
 app = FastAPI(title="Auth & Tasks Practice API")
 
-# --- DATABASE SETUP ---
 def get_db():
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
@@ -53,7 +52,6 @@ def init_db():
 
 init_db()
 
-# --- PYDANTIC SCHEMAS ---
 class TaskCreate(BaseModel):
     title: str
 
@@ -64,8 +62,6 @@ class TaskUpdate(BaseModel):
 class AuthCredentials(BaseModel):
     email: EmailStr
     password: str
-
-# --- AUTH ROUTES (STAGE 1) ---
 
 @app.post("/auth/signup", status_code=status.HTTP_201_CREATED)
 def signup(credentials: AuthCredentials):
@@ -102,7 +98,40 @@ def login(credentials: AuthCredentials):
             detail="Invalid login credentials"
         )
 
-# --- TASK CRUD ROUTES ---
+@app.get("/public/info")
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+@app.get("/protected/profile")
+def get_profile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token required"
+        )
+        
+    try:
+        user_response = supabase.auth.get_user(token)
+        user = user_response.user
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+            
+        return {
+            "id": user.id,
+            "email": user.email,
+            "created_at": user.created_at
+        }
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
 
 @app.get("/")
 def home():
@@ -169,6 +198,5 @@ def delete_task(task_id: int):
 
             if deleted_row is None:
                 raise HTTPException(status_code=404, detail="Task not found")
-
 
             return None
